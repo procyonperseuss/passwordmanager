@@ -6,85 +6,84 @@ import os
 import json
 from pathlib import Path
 
-DEFAULT_SETTINGS = {
-    "data_directory": "~/.password_manager/data",
-    "backup_directory": "~/.password_manager/backups",
-    "show_password_preview": True,
-    "password_preview_chars": 3,
-    "default_password_length": 16,
-    "password_age_warning": 90,  # days
-    "max_failed_attempts": 3,
-    "session_timeout": 300,  # seconds
-    "theme": {
-        "header": "bold blue",
-        "success": "bold green",
-        "error": "bold red",
-        "warning": "bold yellow",
-        "info": "bold cyan"
-    }
-}
-
 class UserSettings:
     def __init__(self):
-        self.settings_file = os.path.expanduser("~/.password_manager/settings.json")
+        """Initialize user settings."""
+        self.settings_file = os.path.join(str(Path.home()), '.password_manager', 'settings.json')
         self.settings = self.load_settings()
-        self.ensure_directories()
 
     def load_settings(self):
-        """Load user settings from file or create with defaults."""
+        """Load settings from file or create with defaults."""
+        defaults = {
+            'user_email': '',
+            'email_settings': {
+                'smtp_server': 'smtp.gmail.com',
+                'smtp_port': 587,
+                'sender_email': '',
+                'sender_password': ''  # Should be an app-specific password for Gmail
+            },
+            'default_password_length': 16,
+            'password_preview_enabled': True,
+            'preview_chars': 3,
+            'password_age_warning': 90,  # days
+            'theme': 'default',
+            'auto_backup': True,
+            'backup_frequency': 7,  # days
+            'max_failed_attempts': 3,
+            'session_timeout': 30  # minutes
+        }
+
         try:
-            with open(self.settings_file, 'r') as f:
-                settings = json.load(f)
-                # Merge with defaults to ensure all settings exist
-                return {**DEFAULT_SETTINGS, **settings}
-        except FileNotFoundError:
-            self.save_settings(DEFAULT_SETTINGS)
-            return DEFAULT_SETTINGS
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r') as f:
+                    saved_settings = json.load(f)
+                    # Merge with defaults to ensure all settings exist
+                    return {**defaults, **saved_settings}
+            else:
+                os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
+                self.save_settings(defaults)
+                return defaults
+        except Exception as e:
+            print(f"Error loading settings: {str(e)}")
+            return defaults
 
-    def save_settings(self, settings):
+    def save_settings(self, settings=None):
         """Save settings to file."""
-        os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
-        with open(self.settings_file, 'w') as f:
-            json.dump(settings, f, indent=4)
+        if settings is not None:
+            self.settings = settings
+        try:
+            os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
+            with open(self.settings_file, 'w') as f:
+                json.dump(self.settings, f, indent=4)
+        except Exception as e:
+            print(f"Error saving settings: {str(e)}")
 
-    def ensure_directories(self):
-        """Ensure all required directories exist."""
-        directories = [
-            os.path.expanduser(self.settings["data_directory"]),
-            os.path.expanduser(self.settings["backup_directory"])
-        ]
-        for directory in directories:
-            os.makedirs(directory, exist_ok=True)
-
-    def get_setting(self, key):
+    def get(self, key, default=None):
         """Get a setting value."""
-        return self.settings.get(key, DEFAULT_SETTINGS.get(key))
+        return self.settings.get(key, default)
 
-    def set_setting(self, key, value):
-        """Set a setting value."""
+    def set(self, key, value):
+        """Set a setting value and save."""
         self.settings[key] = value
-        self.save_settings(self.settings)
-
-    def get_data_path(self, filename):
-        """Get the full path for a data file."""
-        data_dir = os.path.expanduser(self.settings["data_directory"])
-        return os.path.join(data_dir, filename)
-
-    def get_backup_path(self, filename):
-        """Get the full path for a backup file."""
-        backup_dir = os.path.expanduser(self.settings["backup_directory"])
-        return os.path.join(backup_dir, filename)
+        self.save_settings()
 
     def reset_to_defaults(self):
-        """Reset all settings to defaults."""
-        self.settings = DEFAULT_SETTINGS.copy()
-        self.save_settings(self.settings)
+        """Reset settings to defaults."""
+        self.settings = self.load_settings()
+        self.save_settings()
 
-    def update_theme(self, theme_settings):
-        """Update theme settings."""
-        self.settings["theme"].update(theme_settings)
-        self.save_settings(self.settings)
+    def update_email_settings(self, smtp_server=None, smtp_port=None, sender_email=None, sender_password=None):
+        """Update email settings."""
+        if smtp_server:
+            self.settings['email_settings']['smtp_server'] = smtp_server
+        if smtp_port:
+            self.settings['email_settings']['smtp_port'] = smtp_port
+        if sender_email:
+            self.settings['email_settings']['sender_email'] = sender_email
+        if sender_password:
+            self.settings['email_settings']['sender_password'] = sender_password
+        self.save_settings()
 
-    def get_theme(self):
-        """Get current theme settings."""
-        return self.settings.get("theme", DEFAULT_SETTINGS["theme"]) 
+    def get_email_settings(self):
+        """Get email settings."""
+        return self.settings.get('email_settings', {}) 

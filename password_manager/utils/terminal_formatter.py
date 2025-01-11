@@ -9,36 +9,31 @@ from rich.text import Text
 from rich.prompt import Prompt, Confirm
 from rich.progress import Progress
 
-console = Console()
-
 class TerminalFormatter:
-    @staticmethod
-    def print_header(text):
+    def __init__(self):
+        self.console = Console()
+
+    def print_header(self, text):
         """Print a header with a panel."""
-        console.print(Panel(text, style="bold blue"))
+        self.console.print(Panel(text, style="bold blue"))
 
-    @staticmethod
-    def print_success(text):
+    def print_success(self, text):
         """Print a success message."""
-        console.print(f"✓ {text}", style="bold green")
+        self.console.print(f"✓ {text}", style="bold green")
 
-    @staticmethod
-    def print_error(text):
+    def print_error(self, text):
         """Print an error message."""
-        console.print(f"✗ {text}", style="bold red")
+        self.console.print(f"✗ {text}", style="bold red")
 
-    @staticmethod
-    def print_warning(text):
+    def print_warning(self, text):
         """Print a warning message."""
-        console.print(f"! {text}", style="bold yellow")
+        self.console.print(f"! {text}", style="bold yellow")
 
-    @staticmethod
-    def print_info(text):
+    def print_info(self, text):
         """Print an info message."""
-        console.print(f"ℹ {text}", style="bold cyan")
+        self.console.print(f"ℹ {text}", style="bold cyan")
 
-    @staticmethod
-    def create_menu_table(title, options):
+    def create_menu_table(self, title, options):
         """Create a table for menu options."""
         table = Table(title=title, show_header=False, title_style="bold magenta")
         table.add_column("Option", style="cyan")
@@ -47,28 +42,24 @@ class TerminalFormatter:
         for key, value in options.items():
             table.add_row(str(key), value)
 
-        console.print(table)
+        self.console.print(table)
 
-    @staticmethod
-    def get_input(prompt_text, password=False):
+    def get_input(self, prompt_text, password=False):
         """Get user input with optional password masking."""
         return Prompt.ask(prompt_text, password=password)
 
-    @staticmethod
-    def confirm(prompt_text):
+    def confirm(self, prompt_text):
         """Get user confirmation."""
         return Confirm.ask(prompt_text)
 
-    @staticmethod
-    def create_progress():
+    def create_progress(self):
         """Create a progress bar."""
-        return Progress()
+        return Progress(console=self.console)
 
-    @staticmethod
-    def print_account_list(accounts):
+    def print_account_list(self, accounts):
         """Print a formatted list of accounts."""
         if not accounts:
-            console.print("No accounts stored yet.", style="yellow")
+            self.console.print("No accounts stored yet.", style="yellow")
             return
 
         table = Table(title="Stored Accounts", show_header=True)
@@ -85,18 +76,16 @@ class TerminalFormatter:
                 data.get("created_date", "N/A")
             )
 
-        console.print(table)
+        self.console.print(table)
 
-    @staticmethod
-    def print_password_preview(password, show_chars=3):
+    def print_password_preview(self, password, show_chars=3):
         """Print a password preview with partial masking."""
         if len(password) <= show_chars * 2:
             return "*" * len(password)
         
         return password[:show_chars] + "*" * (len(password) - show_chars * 2) + password[-show_chars:]
 
-    @staticmethod
-    def print_help_menu():
+    def print_help_menu(self):
         """Print the help menu."""
         help_text = """
         [bold magenta]Password Manager Help[/bold magenta]
@@ -115,7 +104,9 @@ class TerminalFormatter:
         11. Audit Logs - View system activity logs
         12. Emergency Access - Configure emergency access options
         13. Passwordless Auth - Set up biometric authentication
-        14. Exit - Close the password manager
+        14. Settings - Configure application settings
+        15. Help - Show this help menu
+        16. Exit - Close the password manager
 
         [bold yellow]Tips:[/bold yellow]
         • Use strong, unique passwords for each account
@@ -130,10 +121,9 @@ class TerminalFormatter:
         • Log out when finished
         • Keep your backup files secure
         """
-        console.print(Panel(help_text, title="Help Menu", border_style="blue"))
+        self.console.print(Panel(help_text, title="Help Menu", border_style="blue"))
 
-    @staticmethod
-    def search_accounts(accounts, search_term):
+    def search_accounts(self, accounts, search_term):
         """Search accounts and return matching results."""
         search_term = search_term.lower()
         matches = {}

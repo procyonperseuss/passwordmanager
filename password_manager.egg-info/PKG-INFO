@@ -1,0 +1,11 @@
+Metadata-Version: 2.2
+Name: password_manager
+Version: 0.1
+Requires-Dist: cryptography>=41.0.0
+Requires-Dist: bcrypt>=4.0.0
+Requires-Dist: pyotp>=2.8.0
+Requires-Dist: qrcode>=7.4.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: matplotlib>=3.7.0
+Requires-Dist: rich>=13.7.0
+Dynamic: requires-dist

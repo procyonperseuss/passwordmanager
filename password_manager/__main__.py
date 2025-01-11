@@ -2,19 +2,20 @@
 Main entry point for the password manager.
 """
 
+import sys
 from .ui.cli import PasswordManagerCLI
 
 def main():
-    """Main entry point."""
+    """Main function to run the password manager."""
     try:
         password_manager = PasswordManagerCLI()
         password_manager.run()
     except KeyboardInterrupt:
-        print("\nGoodbye!")
-        exit(0)
+        print("\nExiting password manager...")
+        sys.exit(0)
     except Exception as e:
-        print(f"\nFatal error: {e}")
-        exit(1)
+        print(f"\nFatal error: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

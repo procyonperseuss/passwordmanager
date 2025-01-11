@@ -18,6 +18,14 @@ from ..config.settings import (
 )
 
 class FileHandler:
+    def __init__(self):
+        self.BACKUP_DIR = BACKUP_DIR
+        self.MFA_CONFIG_FILE = MFA_CONFIG_FILE
+        self.BACKUP_CODES_FILE = BACKUP_CODES_FILE
+        # Create necessary directories
+        os.makedirs(os.path.dirname(PASSWORDS_FILE), exist_ok=True)
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+
     @staticmethod
     def load_json_file(file_path, default_value=None):
         """Load data from a JSON file."""
@@ -30,12 +38,14 @@ class FileHandler:
     @staticmethod
     def save_json_file(file_path, data):
         """Save data to a JSON file."""
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w') as file:
             json.dump(data, file, indent=4)
 
     @staticmethod
     def save_binary_file(file_path, data):
         """Save binary data to a file."""
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'wb') as file:
             file.write(data)
 
@@ -63,12 +73,9 @@ class FileHandler:
 
     def create_backup(self):
         """Create a backup of all password manager data."""
-        if not os.path.exists(BACKUP_DIR):
-            os.makedirs(BACKUP_DIR)
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = os.path.join(BACKUP_DIR, f"backup_{timestamp}")
-        os.makedirs(backup_path)
+        backup_path = os.path.join(self.BACKUP_DIR, f"backup_{timestamp}")
+        os.makedirs(backup_path, exist_ok=True)
 
         try:
             # Copy all necessary files to backup directory
@@ -109,6 +116,7 @@ class FileHandler:
             for file_path in files_to_restore:
                 backup_file = os.path.join(backup_path, os.path.basename(file_path))
                 if os.path.exists(backup_file):
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
                     shutil.copy2(backup_file, file_path)
 
         except Exception as e:
@@ -116,11 +124,11 @@ class FileHandler:
 
     def list_backups(self):
         """List all available backups."""
-        if not os.path.exists(BACKUP_DIR):
+        if not os.path.exists(self.BACKUP_DIR):
             return []
 
         backups = []
-        for item in os.listdir(BACKUP_DIR):
+        for item in os.listdir(self.BACKUP_DIR):
             if item.startswith("backup_"):
                 backups.append(item)
 

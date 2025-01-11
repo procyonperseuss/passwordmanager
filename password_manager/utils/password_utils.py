@@ -1,218 +1,161 @@
-"""
-Password management utilities for the password manager.
-"""
+"""Password utilities for the password manager."""
 
-import random
+import re
 import string
-import requests
+import secrets
 import hashlib
-from datetime import datetime, timedelta
-from collections import defaultdict
-from ..config.settings import Colors, PasswordStrength
+import requests
 
 class PasswordUtils:
-    @staticmethod
-    def generate_strong_password(length=16):
-        """
-        Generate a strong random password.
-        The password will contain uppercase, lowercase, numbers, and special characters.
-        """
-        if length < 8:
-            length = 8  # Minimum length for security
-        
+    def __init__(self):
+        """Initialize password utilities."""
+        self.MIN_LENGTH = 12
+        self.SPECIAL_CHARS = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+
+    def generate_strong_password(self, length=16):
+        """Generate a strong random password."""
+        if length < self.MIN_LENGTH:
+            length = self.MIN_LENGTH
+
         # Define character sets
         lowercase = string.ascii_lowercase
         uppercase = string.ascii_uppercase
         digits = string.digits
-        special = "!@#$%^&*()_+-=[]{}|;:,.<>?"
-        
+        special = self.SPECIAL_CHARS
+
         # Ensure at least one character from each set
         password = [
-            random.choice(lowercase),
-            random.choice(uppercase),
-            random.choice(digits),
-            random.choice(special)
+            secrets.choice(lowercase),
+            secrets.choice(uppercase),
+            secrets.choice(digits),
+            secrets.choice(special)
         ]
-        
-        # Fill the rest with random characters from all sets
-        all_characters = lowercase + uppercase + digits + special
-        for _ in range(length - 4):
-            password.append(random.choice(all_characters))
-        
-        # Shuffle the password
-        random.shuffle(password)
-        
-        return ''.join(password)
 
-    @staticmethod
-    def calculate_password_strength(password):
-        """
-        Calculate a detailed password strength score and provide specific feedback.
-        Returns a tuple of (score, list of strengths, list of weaknesses)
-        """
+        # Fill the rest with random characters
+        all_chars = lowercase + uppercase + digits + special
+        password.extend(secrets.choice(all_chars) for _ in range(length - 4))
+
+        # Shuffle the password
+        password_list = list(password)
+        secrets.SystemRandom().shuffle(password_list)
+        return ''.join(password_list)
+
+    def calculate_password_strength(self, password):
+        """Calculate password strength score (0-100)."""
+        if not password:
+            return 0
+
         score = 0
+        length = len(password)
+        
+        # Length score (up to 30 points)
+        if length >= self.MIN_LENGTH:
+            score += 30
+        else:
+            score += (length / self.MIN_LENGTH) * 30
+
+        # Character variety score (up to 40 points)
+        if re.search(r'[A-Z]', password):  # Uppercase
+            score += 10
+        if re.search(r'[a-z]', password):  # Lowercase
+            score += 10
+        if re.search(r'\d', password):     # Digits
+            score += 10
+        if re.search(f'[{re.escape(self.SPECIAL_CHARS)}]', password):  # Special chars
+            score += 10
+
+        # Complexity score (up to 30 points)
+        # Check for repeated characters
+        if not re.search(r'(.)\1{2,}', password):  # No character repeated more than twice
+            score += 10
+        # Check for sequential characters
+        if not re.search(r'(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz|012|123|234|345|456|567|678|789)', password.lower()):
+            score += 10
+        # Check for keyboard patterns
+        if not re.search(r'(qwer|asdf|zxcv|!@#$|1234|4321)', password.lower()):
+            score += 10
+
+        return min(100, score)  # Cap at 100
+
+    def check_password_strength(self, password):
+        """Check password strength and return feedback."""
+        score = self.calculate_password_strength(password)
+        
+        # Initialize feedback
         strengths = []
         weaknesses = []
         
-        # Length check
-        if len(password) >= 12:
-            score += 2
-            strengths.append("Good length (12+ characters)")
-        elif len(password) >= 8:
-            score += 1
-            strengths.append("Minimum length met (8+ characters)")
+        # Length checks
+        if len(password) >= self.MIN_LENGTH:
+            strengths.append("Good length")
         else:
-            weaknesses.append("Password is too short (minimum 8 characters)")
-        
-        # Character type checks
-        has_upper = any(c.isupper() for c in password)
-        has_lower = any(c.islower() for c in password)
-        has_digit = any(c.isdigit() for c in password)
-        has_special = any(not c.isalnum() for c in password)
-        
-        if has_upper:
-            score += 1
+            weaknesses.append(f"Password should be at least {self.MIN_LENGTH} characters long")
+            
+        # Character variety checks
+        if re.search(r'[A-Z]', password):
             strengths.append("Contains uppercase letters")
         else:
             weaknesses.append("Missing uppercase letters")
             
-        if has_lower:
-            score += 1
+        if re.search(r'[a-z]', password):
             strengths.append("Contains lowercase letters")
         else:
             weaknesses.append("Missing lowercase letters")
             
-        if has_digit:
-            score += 1
+        if re.search(r'\d', password):
             strengths.append("Contains numbers")
         else:
             weaknesses.append("Missing numbers")
             
-        if has_special:
-            score += 1
+        if re.search(f'[{re.escape(self.SPECIAL_CHARS)}]', password):
             strengths.append("Contains special characters")
         else:
             weaknesses.append("Missing special characters")
-        
-        # Additional checks
-        if len(set(password)) < len(password) * 0.75:
-            weaknesses.append("Too many repeated characters")
-            score -= 1
-        
-        if len(password) >= 14:
-            score += 1
-            strengths.append("Extra long password (bonus)")
-        
-        return score, strengths, weaknesses
-
-    @staticmethod
-    def check_password_strength(password):
-        """
-        Check password strength and return detailed feedback with color coding.
-        Returns a tuple (is_strong_enough, colored_message)
-        """
-        score, strengths, weaknesses = PasswordUtils.calculate_password_strength(password)
-        
-        # Determine strength level
-        if score >= 6:
-            strength = PasswordStrength.STRONG
-            color = Colors.GREEN
-            status = "Strong"
-        elif score >= 4:
-            strength = PasswordStrength.MEDIUM
-            color = Colors.YELLOW
-            status = "Medium"
+            
+        # Complexity checks
+        if re.search(r'(.)\1{2,}', password):
+            weaknesses.append("Contains repeated characters")
+            
+        if re.search(r'(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz|012|123|234|345|456|567|678|789)', password.lower()):
+            weaknesses.append("Contains sequential characters")
+            
+        if re.search(r'(qwer|asdf|zxcv|!@#$|1234|4321)', password.lower()):
+            weaknesses.append("Contains keyboard patterns")
+            
+        # Determine overall strength
+        if score >= 80:
+            strength = "Strong"
+        elif score >= 60:
+            strength = "Medium"
         else:
-            strength = PasswordStrength.WEAK
-            color = Colors.RED
-            status = "Weak"
-        
-        # Build detailed feedback message
-        message = [f"\nPassword Strength: {color}{status}{Colors.RESET}"]
-        
-        if strengths:
-            message.append("\nStrengths:")
-            for s in strengths:
-                message.append(f"✓ {s}")
-        
-        if weaknesses:
-            message.append("\nWeaknesses:")
-            for w in weaknesses:
-                message.append(f"✗ {w}")
-        
-        # Password is considered strong enough if it's at least medium strength
-        is_strong_enough = strength >= PasswordStrength.MEDIUM
-        
-        if not is_strong_enough:
-            message.append("\nPlease improve your password by addressing the weaknesses.")
-        
-        return is_strong_enough, "\n".join(message)
+            strength = "Weak"
+            
+        return {
+            'score': score,
+            'strength': strength,
+            'strengths': strengths,
+            'weaknesses': weaknesses
+        }
 
-    @staticmethod
-    def check_haveibeenpwned(password):
-        """Check if a password has been compromised using HaveIBeenPwned API."""
-        # Hash the password
-        sha1_hash = hashlib.sha1(password.encode()).hexdigest().upper()
-        prefix, suffix = sha1_hash[:5], sha1_hash[5:]
+    def check_haveibeenpwned(self, password):
+        """Check if password has been exposed in data breaches using HaveIBeenPwned API."""
+        # Create SHA-1 hash of the password
+        password_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+        prefix = password_hash[:5]
+        suffix = password_hash[5:]
         
         try:
             # Query the API with the hash prefix
-            response = requests.get(f"https://api.pwnedpasswords.com/range/{prefix}")
-            if response.status_code == 200:
-                # Check if the hash suffix exists in the response
-                hashes = (line.split(':') for line in response.text.splitlines())
-                for hash_suffix, count in hashes:
-                    if hash_suffix == suffix:
-                        return int(count)
+            response = requests.get(f'https://api.pwnedpasswords.com/range/{prefix}')
+            response.raise_for_status()
+            
+            # Check if the hash suffix appears in the response
+            hashes = (line.split(':') for line in response.text.splitlines())
+            for hash_suffix, count in hashes:
+                if hash_suffix == suffix:
+                    return int(count)
+            
             return 0
         except Exception as e:
-            print(f"Error checking HaveIBeenPwned: {e}")
-            return 0
-
-    @staticmethod
-    def analyze_password_health(passwords, encryption_manager):
-        """Generate a comprehensive password health report."""
-        stats = {
-            "total": len(passwords),
-            "strength": {"weak": 0, "medium": 0, "strong": 0},
-            "reused": defaultdict(list),
-            "compromised": [],
-            "old": [],
-            "problems": defaultdict(list)
-        }
-        
-        # Analyze each password
-        for account, data in passwords.items():
-            decrypted_password = encryption_manager.decrypt_data(data['password'])
-            
-            # Check strength
-            score, strengths, _ = PasswordUtils.calculate_password_strength(decrypted_password)
-            
-            if score >= 6:
-                stats["strength"]["strong"] += 1
-            elif score >= 4:
-                stats["strength"]["medium"] += 1
-                stats["problems"][account].append("Medium strength")
-            else:
-                stats["strength"]["weak"] += 1
-                stats["problems"][account].append("Weak password")
-            
-            # Check for reuse
-            stats["reused"][decrypted_password].append(account)
-            
-            # Check for compromised passwords
-            if PasswordUtils.check_haveibeenpwned(decrypted_password) > 0:
-                stats["compromised"].append(account)
-                stats["problems"][account].append("Compromised in data breach")
-            
-            # Check password age if timestamp exists
-            if "created_date" in data:
-                created_date = datetime.fromisoformat(data["created_date"])
-                if datetime.now() - created_date > timedelta(days=90):
-                    stats["old"].append(account)
-                    stats["problems"][account].append("Password older than 90 days")
-        
-        # Remove non-reused passwords from reused dict
-        stats["reused"] = {k: v for k, v in stats["reused"].items() if len(v) > 1}
-        
-        return stats 
+            print(f"Error checking HaveIBeenPwned: {str(e)}")
+            return 0 
