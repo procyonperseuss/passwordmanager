@@ -1098,12 +1098,11 @@ class PasswordManagerCLI:
             self.formatter.print_error(f"An error occurred: {str(e)}") 
 
     def view_audit_logs(self):
-        """View and filter audit logs."""
+        """Display and handle the audit logs menu."""
         try:
             while True:
                 self.formatter.print_header("Audit Logs")
                 
-                # Create menu options
                 options = {
                     "1": "View Recent Activity",
                     "2": "View All Logs",
@@ -1117,207 +1116,56 @@ class PasswordManagerCLI:
                 choice = self.formatter.get_input("Enter your choice: ")
                 
                 if choice == "1":
-                    self._view_recent_activity()
+                    # Get recent activity (last 24 hours)
+                    recent_logs = self.audit_logger.get_recent_activity(hours=24)
+                    self._display_logs(recent_logs, "Recent Activity (Last 24 Hours)")
+                    
                 elif choice == "2":
-                    self._view_all_logs()
+                    # View all logs
+                    all_logs = self.audit_logger.get_logs()
+                    self._display_logs(all_logs, "All Audit Logs")
+                    
                 elif choice == "3":
                     self._filter_logs()
+                    
                 elif choice == "4":
                     self._export_logs()
+                    
                 elif choice == "5":
-                    self._clear_old_logs()
+                    if self.formatter.confirm("Are you sure you want to clear old logs?"):
+                        self.audit_logger.clear_old_logs()
+                        self.formatter.print_success("Old logs cleared successfully")
+                        
                 elif choice == "6":
                     break
                 else:
                     self.formatter.print_error("Invalid choice")
-                
-                if choice in ["1", "2", "3", "4", "5"]:
-                    input("\nPress Enter to continue...")
-                
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
-
-    def _view_recent_activity(self):
-        """View the most recent audit log entries."""
-        try:
-            logs = self.audit_logger.get_recent_activity(limit=10)
-            if not logs:
-                self.formatter.print_warning("No recent activity found")
-                return
-            
-            self._display_logs(logs, "Recent Activity")
-            
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
-
-    def _view_all_logs(self):
-        """View all audit logs."""
-        try:
-            logs = self.audit_logger.get_logs()
-            if not logs:
-                self.formatter.print_warning("No logs found")
-                return
-            
-            self._display_logs(logs, "All Audit Logs")
-            
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
-
-    def _filter_logs(self):
-        """Filter audit logs based on criteria."""
-        try:
-            self.formatter.print_header("Filter Logs")
-            
-            # Get filter criteria
-            self.formatter.print_info("Leave fields empty to skip filtering")
-            
-            # Date range
-            start_date = self.formatter.get_input("Start date (YYYY-MM-DD): ")
-            end_date = self.formatter.get_input("End date (YYYY-MM-DD): ")
-            
-            # Action type
-            self.formatter.print_info("\nAvailable action types:")
-            action_types = [attr for attr in dir(AuditAction) if not attr.startswith('_')]
-            for i, action in enumerate(action_types, 1):
-                self.formatter.print_info(f"{i}. {action}")
-            
-            action_choice = self.formatter.get_input("\nEnter action type number (or leave empty): ")
-            action_type = None
-            if action_choice.isdigit() and 1 <= int(action_choice) <= len(action_types):
-                action_type = getattr(AuditAction, action_types[int(action_choice) - 1])
-            
-            # Status
-            status = self.formatter.get_input("Status (success/failure, or leave empty): ")
-            if status and status not in ['success', 'failure']:
-                self.formatter.print_error("Invalid status. Using no status filter.")
-                status = None
-            
-            # Convert dates if provided
-            try:
-                if start_date:
-                    start_date = datetime.strptime(start_date, '%Y-%m-%d')
-                if end_date:
-                    end_date = datetime.strptime(end_date, '%Y-%m-%d')
-            except ValueError:
-                self.formatter.print_error("Invalid date format. Using no date filter.")
-                start_date = end_date = None
-            
-            # Get filtered logs
-            logs = self.audit_logger.get_logs(
-                start_date=start_date,
-                end_date=end_date,
-                action_type=action_type,
-                status=status
-            )
-            
-            if not logs:
-                self.formatter.print_warning("No logs found matching the criteria")
-                return
-            
-            self._display_logs(logs, "Filtered Audit Logs")
-            
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
-
-    def _export_logs(self):
-        """Export audit logs to a file."""
-        try:
-            self.formatter.print_header("Export Logs")
-            
-            # Get export format
-            format_choice = self.formatter.get_input("Export format (json/csv) [json]: ").lower() or 'json'
-            if format_choice not in ['json', 'csv']:
-                self.formatter.print_error("Invalid format. Using JSON.")
-                format_choice = 'json'
-            
-            # Get export path
-            default_filename = f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            filename = self.formatter.get_input(f"Export filename [{default_filename}]: ") or default_filename
-            
-            # Add extension if not provided
-            if not filename.endswith(f'.{format_choice}'):
-                filename = f"{filename}.{format_choice}"
-            
-            # Get logs
-            logs = self.audit_logger.get_logs()
-            if not logs:
-                self.formatter.print_warning("No logs to export")
-                return
-            
-            # Export based on format
-            if format_choice == 'json':
-                with open(filename, 'w') as f:
-                    json.dump({'logs': logs}, f, indent=4, default=str)
-            else:  # csv
-                import csv
-                with open(filename, 'w', newline='') as f:
-                    writer = csv.writer(f)
-                    # Write header
-                    writer.writerow(['Timestamp', 'Action', 'Details', 'Status'])
-                    # Write data
-                    for log in logs:
-                        writer.writerow([
-                            log['timestamp'],
-                            log['action'],
-                            log['details'],
-                            log['status']
-                        ])
-            
-            self.formatter.print_success(f"Logs exported to {filename}")
-            
-            # Log the export
-            self.audit_logger.log_action(
-                AuditAction.EXPORT_DATA,
-                f"Exported audit logs to {filename}"
-            )
-            
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
-
-    def _clear_old_logs(self):
-        """Clear logs older than specified days."""
-        try:
-            self.formatter.print_header("Clear Old Logs")
-            
-            days = self.formatter.get_input("Clear logs older than how many days? [90]: ")
-            days = int(days) if days.isdigit() else 90
-            
-            if not self.formatter.confirm(f"Are you sure you want to clear logs older than {days} days?"):
-                return
-            
-            self.audit_logger.clear_old_logs(days)
-            self.formatter.print_success(f"Cleared logs older than {days} days")
-            
+                    
         except Exception as e:
             self.formatter.print_error(f"An error occurred: {str(e)}")
 
     def _display_logs(self, logs, title):
-        """Display logs in a formatted table."""
-        try:
-            table = Table(title=title, show_header=True)
-            table.add_column("Timestamp", style="cyan")
-            table.add_column("Action", style="green")
-            table.add_column("Details", style="white")
-            table.add_column("Status", style="yellow")
+        """Display audit logs in a formatted table."""
+        if not logs:
+            self.formatter.print_warning("No logs found")
+            return
             
-            for log in logs:
-                # Convert timestamp to local time
-                timestamp = datetime.fromisoformat(log['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Set status color
-                status_style = "green" if log['status'] == "success" else "red"
-                
-                table.add_row(
-                    timestamp,
-                    log['action'],
-                    log['details'],
-                    Text(log['status'], style=status_style)
-                )
-            
-            self.formatter.console.print(table)
-            
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
+        table = Table(title=title, show_header=True)
+        table.add_column("Timestamp", style="cyan")
+        table.add_column("Action", style="green")
+        table.add_column("Details", style="yellow")
+        table.add_column("Status", style="magenta")
+        
+        for log in logs:
+            status_style = "green" if log['status'] == 'success' else "red"
+            table.add_row(
+                log['timestamp'],
+                log['action'],
+                log['details'],
+                Text(log['status'], style=status_style)
+            )
+        
+        self.formatter.console.print(table)
 
     def emergency_access_menu(self):
         """Display and handle the emergency access menu."""

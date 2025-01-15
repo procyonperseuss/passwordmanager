@@ -66,8 +66,12 @@ class AuditLogger:
 
     def get_recent_activity(self, hours=24):
         """Get logs from the last specified hours."""
-        cutoff_time = datetime.now() - timedelta(hours=hours)
-        return [log for log in self.logs if datetime.strptime(log['timestamp'], '%Y-%m-%d %H:%M:%S') >= cutoff_time]
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            return [log for log in self.logs if datetime.strptime(log['timestamp'], '%Y-%m-%d %H:%M:%S') >= cutoff_time]
+        except Exception as e:
+            print(f"Error getting recent activity: {str(e)}")
+            return []
 
     def clear_old_logs(self, days=90):
         """Clear logs older than specified days."""
