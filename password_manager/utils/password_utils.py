@@ -5,6 +5,8 @@ import string
 import secrets
 import hashlib
 import requests
+import zxcvbn
+from ..config.settings import Colors
 
 class PasswordUtils:
     def __init__(self):
@@ -41,56 +43,52 @@ class PasswordUtils:
         return ''.join(password_list)
 
     def calculate_password_strength(self, password):
-        """Calculate password strength score (0-100)."""
+        """Calculate password strength score using zxcvbn (0-100)."""
         if not password:
             return 0
 
-        score = 0
-        length = len(password)
+        # Use zxcvbn for sophisticated password analysis
+        result = zxcvbn.zxcvbn(password)
         
-        # Length score (up to 30 points)
-        if length >= self.MIN_LENGTH:
-            score += 30
-        else:
-            score += (length / self.MIN_LENGTH) * 30
-
-        # Character variety score (up to 40 points)
-        if re.search(r'[A-Z]', password):  # Uppercase
-            score += 10
-        if re.search(r'[a-z]', password):  # Lowercase
-            score += 10
-        if re.search(r'\d', password):     # Digits
-            score += 10
-        if re.search(f'[{re.escape(self.SPECIAL_CHARS)}]', password):  # Special chars
-            score += 10
-
-        # Complexity score (up to 30 points)
-        # Check for repeated characters
-        if not re.search(r'(.)\1{2,}', password):  # No character repeated more than twice
-            score += 10
-        # Check for sequential characters
-        if not re.search(r'(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz|012|123|234|345|456|567|678|789)', password.lower()):
-            score += 10
-        # Check for keyboard patterns
-        if not re.search(r'(qwer|asdf|zxcv|!@#$|1234|4321)', password.lower()):
-            score += 10
-
-        return min(100, score)  # Cap at 100
+        # Convert zxcvbn score (0-4) to our scale (0-100)
+        base_score = result['score'] * 25  # This gives us 0, 25, 50, 75, or 100
+        
+        # Additional points for length beyond minimum
+        length_bonus = min(10, max(0, len(password) - self.MIN_LENGTH))
+        
+        return min(100, base_score + length_bonus)
 
     def check_password_strength(self, password):
-        """Check password strength and return feedback."""
+        """Check password strength and return detailed feedback with visual meter."""
+        if not password:
+            return {
+                'score': 0,
+                'strength': "Invalid",
+                'strengths': [],
+                'weaknesses': ["Password cannot be empty"],
+                'visual_meter': self._generate_strength_meter(0)
+            }
+
+        # Get zxcvbn analysis
+        result = zxcvbn.zxcvbn(password)
         score = self.calculate_password_strength(password)
         
-        # Initialize feedback
+        # Initialize feedback lists
         strengths = []
         weaknesses = []
-        
-        # Length checks
+
+        # Basic requirements check
         if len(password) >= self.MIN_LENGTH:
             strengths.append("Good length")
         else:
             weaknesses.append(f"Password should be at least {self.MIN_LENGTH} characters long")
-            
+
+        # Add zxcvbn feedback
+        if result['feedback']['warning']:
+            weaknesses.append(result['feedback']['warning'])
+        for suggestion in result['feedback']['suggestions']:
+            weaknesses.append(suggestion)
+
         # Character variety checks
         if re.search(r'[A-Z]', password):
             strengths.append("Contains uppercase letters")
@@ -111,31 +109,38 @@ class PasswordUtils:
             strengths.append("Contains special characters")
         else:
             weaknesses.append("Missing special characters")
-            
-        # Complexity checks
-        if re.search(r'(.)\1{2,}', password):
-            weaknesses.append("Contains repeated characters")
-            
-        if re.search(r'(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz|012|123|234|345|456|567|678|789)', password.lower()):
-            weaknesses.append("Contains sequential characters")
-            
-        if re.search(r'(qwer|asdf|zxcv|!@#$|1234|4321)', password.lower()):
-            weaknesses.append("Contains keyboard patterns")
-            
-        # Determine overall strength
+
+        # Determine strength category
         if score >= 80:
             strength = "Strong"
         elif score >= 60:
             strength = "Medium"
         else:
             strength = "Weak"
-            
+
         return {
             'score': score,
             'strength': strength,
             'strengths': strengths,
-            'weaknesses': weaknesses
+            'weaknesses': weaknesses,
+            'visual_meter': self._generate_strength_meter(score),
+            'crack_time': result['crack_times_display']['offline_slow_hashing_1e4_per_second']
         }
+
+    def _generate_strength_meter(self, score):
+        """Generate a visual strength meter."""
+        total_bars = 10
+        filled_bars = int(score / 100 * total_bars)
+        
+        if score >= 80:
+            color = Colors.GREEN
+        elif score >= 60:
+            color = Colors.YELLOW
+        else:
+            color = Colors.RED
+            
+        meter = f"{color}{'█' * filled_bars}{'░' * (total_bars - filled_bars)}{Colors.RESET}"
+        return f"Strength: [{meter}] {score}/100"
 
     def check_haveibeenpwned(self, password):
         """Check if password has been exposed in data breaches using HaveIBeenPwned API."""

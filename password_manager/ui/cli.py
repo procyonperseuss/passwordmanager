@@ -3,6 +3,7 @@ Command-line interface for the password manager.
 """
 
 import os
+from collections import defaultdict
 from datetime import datetime, timedelta
 from rich.table import Table
 from rich.panel import Panel
@@ -27,6 +28,7 @@ from ..storage.file_handler import FileHandler
 from ..authentication.auth_manager import AuthenticationManager
 from ..audit.audit import AuditLogger
 from ..utils.password_utils import PasswordUtils
+from .security_menu import SecurityMenu
 
 class PasswordManagerCLI:
     def __init__(self):
@@ -53,6 +55,7 @@ class PasswordManagerCLI:
         # Load initial data
         self.load_data()
         self.load_favorites()
+        self.security_menu = SecurityMenu()
 
     def load_data(self):
         """Load passwords and secure notes from storage."""
@@ -331,32 +334,32 @@ class PasswordManagerCLI:
 
     def main_menu(self):
         """Display the main menu."""
-        menu_options = {
-            "1": "Add Password",
-            "2": "Retrieve Password",
-            "3": "List Accounts",
-            "4": "Remove Password",
-            "5": "Generate Strong Password",
-            "6": "Backup and Restore",
-            "7": "MFA Settings",
-            "8": "Password Health Report",
-            "9": "Improve Passwords",
-            "10": "Secure Notes",
-            "11": "View Audit Logs",
-            "12": "Emergency Access",
-            "13": "Passwordless Authentication",
-            "14": "Settings",
-            "15": "Help",
-            "16": "Exit"
-        }
-        
         while True:
             self.formatter.print_header("Password Manager")
-            self.formatter.create_menu_table("Main Menu", menu_options)
+            
+            options = {
+                "1": "Add Password",
+                "2": "Retrieve Password",
+                "3": "List Accounts",
+                "4": "Remove Password",
+                "5": "Generate Strong Password",
+                "6": "Backup and Restore",
+                "7": "MFA Settings",
+                "8": "Password Health Report",
+                "9": "Improve Passwords",
+                "10": "Secure Notes",
+                "11": "View Audit Logs",
+                "12": "Emergency Access",
+                "13": "Passwordless Authentication",
+                "14": "Settings",
+                "15": "Help",
+                "16": "Exit"
+            }
+            
+            self.formatter.create_menu_table("Main Menu", options)
+            choice = self.formatter.get_input("\nEnter your choice")
             
             try:
-                choice = self.formatter.get_input("\nEnter your choice")
-                
                 if choice == "1":
                     self.add_password()
                 elif choice == "2":
@@ -670,12 +673,13 @@ class PasswordManagerCLI:
                 
                 for account, data in passwords.items():
                     decrypted_password = self.encryption_manager.decrypt_data(data['password'])
-                    strength = self.password_utils.calculate_password_strength(decrypted_password)
+                    strength_result = self.password_utils.check_password_strength(decrypted_password)
+                    score = strength_result['score']
                     
                     # Count password strengths
-                    if strength >= 80:
+                    if score >= 80:
                         strength_stats['strong'] += 1
-                    elif strength >= 60:
+                    elif score >= 60:
                         strength_stats['medium'] += 1
                         total_score -= 5
                     else:
@@ -702,31 +706,37 @@ class PasswordManagerCLI:
                 table.add_column("Category", style="cyan")
                 table.add_column("Count", style="magenta")
                 table.add_column("Impact", style="yellow")
+                table.add_column("Details", style="green")
                 
                 table.add_row(
                     "Strong Passwords",
                     str(strength_stats['strong']),
-                    "Good"
+                    "Good",
+                    "Score >= 80"
                 )
                 table.add_row(
                     "Medium Passwords",
                     str(strength_stats['medium']),
-                    "-5 points each"
+                    "-5 points each",
+                    "Score 60-79"
                 )
                 table.add_row(
                     "Weak Passwords",
                     str(strength_stats['weak']),
-                    "-10 points each"
+                    "-10 points each",
+                    "Score < 60"
                 )
                 table.add_row(
                     "Reused Passwords",
                     str(len(reused_passwords)),
-                    "-15 points each"
+                    "-15 points each",
+                    "Same password used multiple times"
                 )
                 table.add_row(
                     "Old Passwords (>90 days)",
                     str(len(old_passwords)),
-                    "-5 points each"
+                    "-5 points each",
+                    "Should be updated regularly"
                 )
                 
                 progress.update(task, advance=30)
@@ -735,19 +745,19 @@ class PasswordManagerCLI:
                 self.formatter.print_header("Password Health Report")
                 self.formatter.console.print(table)
                 
-                # Display overall score
+                # Display overall score with visual meter
                 total_score = max(0, min(100, total_score))
                 score_color = "green" if total_score >= 80 else "yellow" if total_score >= 60 else "red"
-                self.formatter.console.print(f"\nOverall Security Score: ", end="")
-                self.formatter.console.print(f"{total_score}/100", style=f"bold {score_color}")
+                self.formatter.console.print("\nOverall Security Score:")
+                self._display_strength_meter(total_score)
                 
                 progress.update(task, completed=100)
                 
                 # Store results for improve_passwords method
                 self._health_report_cache = {
                     'weak_passwords': [acc for acc, data in passwords.items() 
-                                     if self.password_utils.calculate_password_strength(
-                                         self.encryption_manager.decrypt_data(data['password'])) < 60],
+                                     if self.password_utils.check_password_strength(
+                                         self.encryption_manager.decrypt_data(data['password']))['score'] < 60],
                     'reused_passwords': reused_passwords,
                     'old_passwords': old_passwords
                 }
@@ -755,6 +765,21 @@ class PasswordManagerCLI:
         except Exception as e:
             self.formatter.print_error(f"An error occurred: {str(e)}")
             self._health_report_cache = {}
+
+    def _display_strength_meter(self, score):
+        """Display a visual strength meter."""
+        total_bars = 20
+        filled_bars = int(score / 100 * total_bars)
+        
+        if score >= 80:
+            color = "green"
+        elif score >= 60:
+            color = "yellow"
+        else:
+            color = "red"
+            
+        meter = f"[{color}]{'█' * filled_bars}{'░' * (total_bars - filled_bars)}[/] [{color}]{score}[/]/100"
+        self.formatter.console.print(meter)
 
     def improve_passwords(self):
         """Provide suggestions for improving password security."""
@@ -781,22 +806,29 @@ class PasswordManagerCLI:
             table.add_column("Account", style="cyan")
             table.add_column("Issue", style="yellow")
             table.add_column("Recommendation", style="green")
+            table.add_column("Estimated Crack Time", style="magenta")
             
             # Add weak passwords to the table
             for account in self._health_report_cache.get('weak_passwords', []):
+                password = self.encryption_manager.decrypt_data(
+                    self.file_handler.load_passwords()[account]['password']
+                )
+                strength_info = self.password_utils.check_password_strength(password)
                 table.add_row(
                     account,
                     "Weak Password",
-                    "Generate a new strong password using option 5"
+                    "Generate a new strong password using option 5",
+                    strength_info['crack_time']
                 )
-            
+                
             # Add reused passwords to the table
             for password, accounts in self._health_report_cache.get('reused_passwords', {}).items():
                 for account in accounts:
                     table.add_row(
                         account,
                         "Reused Password",
-                        "Create unique passwords for each account"
+                        "Create unique passwords for each account",
+                        "N/A"
                     )
             
             # Add old passwords to the table
@@ -804,7 +836,8 @@ class PasswordManagerCLI:
                 table.add_row(
                     account,
                     "Password > 90 days old",
-                    "Update password for better security"
+                    "Update password for better security",
+                    "N/A"
                 )
             
             self.formatter.console.print(table)
@@ -1465,45 +1498,39 @@ class PasswordManagerCLI:
             self.formatter.print_error(f"An error occurred: {str(e)}") 
 
     def settings_menu(self):
-        """Display and handle the settings menu."""
-        try:
-            while True:
-                self.formatter.print_header("Settings")
-                
-                options = {
-                    "1": "Configure Email Settings",
-                    "2": "Password Settings",
-                    "3": "Security Settings",
-                    "4": "Theme Settings",
-                    "5": "Backup Settings",
-                    "6": "Reset to Defaults",
-                    "7": "Return to Main Menu"
-                }
-                
-                self.formatter.create_menu_table("Settings Menu", options)
-                choice = self.formatter.get_input("Enter your choice: ")
-                
-                if choice == "1":
-                    self._configure_email_settings()
-                elif choice == "2":
-                    self._configure_password_settings()
-                elif choice == "3":
-                    self._configure_security_settings()
-                elif choice == "4":
-                    self._configure_theme_settings()
-                elif choice == "5":
-                    self._configure_backup_settings()
-                elif choice == "6":
-                    if self.formatter.confirm("Are you sure you want to reset all settings to defaults?"):
-                        self.settings.reset_to_defaults()
-                        self.formatter.print_success("Settings reset to defaults")
-                elif choice == "7":
-                    break
-                else:
-                    self.formatter.print_error("Invalid choice")
-                    
-        except Exception as e:
-            self.formatter.print_error(f"An error occurred: {str(e)}")
+        """Display settings menu."""
+        while True:
+            self.formatter.print_header("Settings")
+            
+            options = {
+                "1": "Configure Email Settings",
+                "2": "Password Settings",
+                "3": "Security Settings",
+                "4": "Theme Settings",
+                "5": "Backup Settings",
+                "6": "Reset to Defaults",
+                "7": "Return to Main Menu"
+            }
+            
+            self.formatter.create_menu_table("Settings Menu", options)
+            choice = self.formatter.get_input("Enter your choice")
+            
+            if choice == "1":
+                self._configure_email_settings()
+            elif choice == "2":
+                self._configure_password_settings()
+            elif choice == "3":
+                self._configure_security_settings()
+            elif choice == "4":
+                self._configure_theme_settings()
+            elif choice == "5":
+                self._configure_backup_settings()
+            elif choice == "6":
+                self._reset_settings()
+            elif choice == "7":
+                break
+            else:
+                self.formatter.print_error("Invalid choice")
 
     def _configure_email_settings(self):
         """Configure email settings for notifications."""
@@ -1569,3 +1596,348 @@ class PasswordManagerCLI:
             
         except Exception as e:
             self.formatter.print_error(f"An error occurred: {str(e)}") 
+
+    def _configure_theme_settings(self):
+        """Configure theme settings."""
+        self.formatter.print_header("Theme Settings")
+        
+        # Show current theme
+        current_theme = self.settings.get("theme", {
+            "style": "default",
+            "color_scheme": "dark",
+            "menu_style": "compact"
+        })
+        
+        self.formatter.print_info("\nCurrent Theme Settings:")
+        for key, value in current_theme.items():
+            self.formatter.print_info(f"{key.replace('_', ' ').title()}: {value}")
+        
+        # Theme style options
+        self.formatter.print_header("\nSelect Theme Style")
+        style_options = {
+            "1": "Default",
+            "2": "Modern",
+            "3": "Classic",
+            "4": "Minimal"
+        }
+        self.formatter.create_menu_table("Theme Styles", style_options)
+        style_choice = self.formatter.get_input("Choose style [1-4]") or "1"
+        
+        # Color scheme options
+        self.formatter.print_header("\nSelect Color Scheme")
+        color_options = {
+            "1": "Dark",
+            "2": "Light",
+            "3": "Blue",
+            "4": "Green",
+            "5": "Purple"
+        }
+        self.formatter.create_menu_table("Color Schemes", color_options)
+        color_choice = self.formatter.get_input("Choose color scheme [1-5]") or "1"
+        
+        # Menu style options
+        self.formatter.print_header("\nSelect Menu Style")
+        menu_options = {
+            "1": "Compact",
+            "2": "Expanded",
+            "3": "Detailed"
+        }
+        self.formatter.create_menu_table("Menu Styles", menu_options)
+        menu_choice = self.formatter.get_input("Choose menu style [1-3]") or "1"
+        
+        # Update theme settings
+        new_theme = {
+            "style": style_options[style_choice].lower(),
+            "color_scheme": color_options[color_choice].lower(),
+            "menu_style": menu_options[menu_choice].lower()
+        }
+        
+        self.settings.update({"theme": new_theme})
+        self.settings.save()
+        
+        # Apply theme changes
+        self.formatter.apply_theme(new_theme)
+        
+        self.formatter.print_success("Theme settings updated successfully!")
+        input("\nPress Enter to continue...") 
+
+    def _configure_password_settings(self):
+        """Configure password-related settings."""
+        while True:
+            self.formatter.print_header("Password Settings")
+            print("\n Password Settings Menu")
+            print(" [1] Minimum Password Length")
+            print(" [2] Password Complexity Requirements")
+            print(" [3] Password History Size")
+            print(" [4] Password Expiration Policy")
+            print(" [5] Return to Settings Menu")
+            
+            choice = input("\nEnter your choice: ").strip()
+            
+            if choice == "1":
+                try:
+                    min_length = int(input("\nEnter minimum password length (8-32): "))
+                    if 8 <= min_length <= 32:
+                        self.settings.update({"min_password_length": min_length})
+                        print("\nMinimum password length updated successfully!")
+                    else:
+                        print("\nInvalid length. Please enter a value between 8 and 32.")
+                except ValueError:
+                    print("\nInvalid input. Please enter a number.")
+            
+            elif choice == "2":
+                print("\nPassword Complexity Requirements:")
+                print(" [1] Require uppercase letters")
+                print(" [2] Require lowercase letters")
+                print(" [3] Require numbers")
+                print(" [4] Require special characters")
+                
+                complexity = {
+                    "require_uppercase": input("\nRequire uppercase letters? (y/n): ").lower() == 'y',
+                    "require_lowercase": input("Require lowercase letters? (y/n): ").lower() == 'y',
+                    "require_numbers": input("Require numbers? (y/n): ").lower() == 'y',
+                    "require_special": input("Require special characters? (y/n): ").lower() == 'y'
+                }
+                
+                self.settings.update({"password_complexity": complexity})
+                print("\nPassword complexity requirements updated successfully!")
+            
+            elif choice == "3":
+                try:
+                    history_size = int(input("\nEnter password history size (0-10): "))
+                    if 0 <= history_size <= 10:
+                        self.settings.update({"password_history_size": history_size})
+                        print("\nPassword history size updated successfully!")
+                    else:
+                        print("\nInvalid size. Please enter a value between 0 and 10.")
+                except ValueError:
+                    print("\nInvalid input. Please enter a number.")
+            
+            elif choice == "4":
+                try:
+                    expiration_days = int(input("\nEnter password expiration days (0 for never): "))
+                    if expiration_days >= 0:
+                        self.settings.update({"password_expiration_days": expiration_days})
+                        print("\nPassword expiration policy updated successfully!")
+                    else:
+                        print("\nInvalid value. Please enter 0 or a positive number.")
+                except ValueError:
+                    print("\nInvalid input. Please enter a number.")
+            
+            elif choice == "5":
+                break
+            
+            else:
+                print("\nInvalid choice. Please try again.")
+            
+            input("\nPress Enter to continue...") 
+
+    def _configure_security_settings(self):
+        """Configure security-related settings."""
+        while True:
+            self.formatter.print_header("Security Settings")
+            
+            # Get current settings
+            security_settings = self.settings.get("security", {
+                "session_timeout": 15,
+                "max_login_attempts": 3,
+                "lockout_duration": 30,
+                "require_2fa": False,
+                "allow_biometric": True,
+                "password_reuse_limit": 5,
+                "auto_logout": True
+            })
+            
+            # Show current settings
+            self.formatter.print_info("\nCurrent Security Settings:")
+            for key, value in security_settings.items():
+                self.formatter.print_info(f"{key.replace('_', ' ').title()}: {value}")
+            
+            # Show menu options
+            print("\n Security Settings Menu")
+            print(" [1] Session Timeout (minutes)")
+            print(" [2] Maximum Login Attempts")
+            print(" [3] Account Lockout Duration (minutes)")
+            print(" [4] Two-Factor Authentication")
+            print(" [5] Biometric Authentication")
+            print(" [6] Password Reuse Limit")
+            print(" [7] Auto Logout")
+            print(" [8] Return to Settings Menu")
+            
+            choice = self.formatter.get_input("\nEnter your choice").strip()
+            
+            try:
+                if choice == "1":
+                    timeout = int(self.formatter.get_input("Enter session timeout in minutes (5-60): "))
+                    if 5 <= timeout <= 60:
+                        security_settings["session_timeout"] = timeout
+                        self.formatter.print_success("Session timeout updated!")
+                    else:
+                        self.formatter.print_error("Invalid timeout value. Must be between 5 and 60 minutes.")
+                
+                elif choice == "2":
+                    attempts = int(self.formatter.get_input("Enter maximum login attempts (1-10): "))
+                    if 1 <= attempts <= 10:
+                        security_settings["max_login_attempts"] = attempts
+                        self.formatter.print_success("Maximum login attempts updated!")
+                    else:
+                        self.formatter.print_error("Invalid value. Must be between 1 and 10 attempts.")
+                
+                elif choice == "3":
+                    duration = int(self.formatter.get_input("Enter lockout duration in minutes (5-1440): "))
+                    if 5 <= duration <= 1440:
+                        security_settings["lockout_duration"] = duration
+                        self.formatter.print_success("Lockout duration updated!")
+                    else:
+                        self.formatter.print_error("Invalid duration. Must be between 5 and 1440 minutes.")
+                
+                elif choice == "4":
+                    require_2fa = self.formatter.get_input("Enable two-factor authentication? (y/n): ").lower() == 'y'
+                    security_settings["require_2fa"] = require_2fa
+                    if require_2fa and not self.file_handler.load_json_file(MFA_CONFIG_FILE, {}).get("enabled", False):
+                        self.formatter.print_warning("Please set up MFA in the MFA Settings menu.")
+                    self.formatter.print_success("Two-factor authentication setting updated!")
+                
+                elif choice == "5":
+                    allow_biometric = self.formatter.get_input("Enable biometric authentication? (y/n): ").lower() == 'y'
+                    security_settings["allow_biometric"] = allow_biometric
+                    self.formatter.print_success("Biometric authentication setting updated!")
+                
+                elif choice == "6":
+                    limit = int(self.formatter.get_input("Enter password reuse limit (0-10, 0 to disable): "))
+                    if 0 <= limit <= 10:
+                        security_settings["password_reuse_limit"] = limit
+                        self.formatter.print_success("Password reuse limit updated!")
+                    else:
+                        self.formatter.print_error("Invalid limit. Must be between 0 and 10.")
+                
+                elif choice == "7":
+                    auto_logout = self.formatter.get_input("Enable automatic logout on inactivity? (y/n): ").lower() == 'y'
+                    security_settings["auto_logout"] = auto_logout
+                    self.formatter.print_success("Auto logout setting updated!")
+                
+                elif choice == "8":
+                    break
+                
+                else:
+                    self.formatter.print_error("Invalid choice")
+                    continue
+                
+                # Save updated settings
+                self.settings.update({"security": security_settings})
+                self.settings.save()
+                
+            except ValueError:
+                self.formatter.print_error("Invalid input. Please enter a number where required.")
+            
+            input("\nPress Enter to continue...") 
+
+    def _configure_backup_settings(self):
+        """Configure backup-related settings."""
+        while True:
+            self.formatter.print_header("Backup Settings")
+            
+            # Get current settings
+            backup_settings = self.settings.get("backup", {
+                "auto_backup": True,
+                "backup_frequency": 7,  # days
+                "max_backups": 10,
+                "backup_encryption": True,
+                "include_audit_logs": True,
+                "include_settings": True,
+                "backup_location": BACKUP_DIR,
+                "compression": True
+            })
+            
+            # Show current settings
+            self.formatter.print_info("\nCurrent Backup Settings:")
+            for key, value in backup_settings.items():
+                if key == "backup_location":
+                    value = os.path.relpath(value, os.path.expanduser("~"))
+                self.formatter.print_info(f"{key.replace('_', ' ').title()}: {value}")
+            
+            # Show menu options
+            print("\n Backup Settings Menu")
+            print(" [1] Toggle Automatic Backups")
+            print(" [2] Backup Frequency")
+            print(" [3] Maximum Backup Files")
+            print(" [4] Toggle Backup Encryption")
+            print(" [5] Toggle Audit Log Inclusion")
+            print(" [6] Toggle Settings Inclusion")
+            print(" [7] Change Backup Location")
+            print(" [8] Toggle Compression")
+            print(" [9] Return to Settings Menu")
+            
+            choice = self.formatter.get_input("\nEnter your choice").strip()
+            
+            try:
+                if choice == "1":
+                    backup_settings["auto_backup"] = not backup_settings["auto_backup"]
+                    self.formatter.print_success(f"Automatic backups {'enabled' if backup_settings['auto_backup'] else 'disabled'}!")
+                
+                elif choice == "2":
+                    frequency = int(self.formatter.get_input("Enter backup frequency in days (1-30): "))
+                    if 1 <= frequency <= 30:
+                        backup_settings["backup_frequency"] = frequency
+                        self.formatter.print_success("Backup frequency updated!")
+                    else:
+                        self.formatter.print_error("Invalid frequency. Must be between 1 and 30 days.")
+                
+                elif choice == "3":
+                    max_files = int(self.formatter.get_input("Enter maximum number of backup files (1-50): "))
+                    if 1 <= max_files <= 50:
+                        backup_settings["max_backups"] = max_files
+                        self.formatter.print_success("Maximum backup files updated!")
+                    else:
+                        self.formatter.print_error("Invalid value. Must be between 1 and 50 files.")
+                
+                elif choice == "4":
+                    backup_settings["backup_encryption"] = not backup_settings["backup_encryption"]
+                    self.formatter.print_success(f"Backup encryption {'enabled' if backup_settings['backup_encryption'] else 'disabled'}!")
+                
+                elif choice == "5":
+                    backup_settings["include_audit_logs"] = not backup_settings["include_audit_logs"]
+                    self.formatter.print_success(f"Audit log inclusion {'enabled' if backup_settings['include_audit_logs'] else 'disabled'}!")
+                
+                elif choice == "6":
+                    backup_settings["include_settings"] = not backup_settings["include_settings"]
+                    self.formatter.print_success(f"Settings inclusion {'enabled' if backup_settings['include_settings'] else 'disabled'}!")
+                
+                elif choice == "7":
+                    default_path = os.path.relpath(BACKUP_DIR, os.path.expanduser("~"))
+                    new_path = self.formatter.get_input(f"Enter backup location path (default: {default_path}): ")
+                    
+                    if new_path:
+                        # Convert to absolute path if relative
+                        if not os.path.isabs(new_path):
+                            new_path = os.path.join(os.path.expanduser("~"), new_path)
+                        
+                        # Create directory if it doesn't exist
+                        os.makedirs(new_path, exist_ok=True)
+                        backup_settings["backup_location"] = new_path
+                        self.formatter.print_success("Backup location updated!")
+                    else:
+                        backup_settings["backup_location"] = BACKUP_DIR
+                        self.formatter.print_info("Using default backup location.")
+                
+                elif choice == "8":
+                    backup_settings["compression"] = not backup_settings["compression"]
+                    self.formatter.print_success(f"Backup compression {'enabled' if backup_settings['compression'] else 'disabled'}!")
+                
+                elif choice == "9":
+                    break
+                
+                else:
+                    self.formatter.print_error("Invalid choice")
+                    continue
+                
+                # Save updated settings
+                self.settings.update({"backup": backup_settings})
+                self.settings.save()
+                
+            except ValueError:
+                self.formatter.print_error("Invalid input. Please enter a number where required.")
+            except Exception as e:
+                self.formatter.print_error(f"An error occurred: {str(e)}")
+            
+            input("\nPress Enter to continue...") 

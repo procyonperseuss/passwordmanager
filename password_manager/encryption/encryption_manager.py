@@ -7,46 +7,37 @@ from ..config.settings import KEY_FILE
 
 class EncryptionManager:
     def __init__(self):
-        """Initialize the encryption manager."""
+        """Initialize encryption manager."""
         self.key = self._load_or_generate_key()
         self.fernet = Fernet(self.key)
 
-    def _generate_key(self):
-        """Generate a new encryption key."""
-        key = Fernet.generate_key()
-        os.makedirs(os.path.dirname(KEY_FILE), exist_ok=True)
-        with open(KEY_FILE, 'wb') as f:
-            f.write(key)
-        return key
-
     def _load_or_generate_key(self):
-        """Load existing key or generate a new one."""
+        """Load the encryption key from file or generate a new one."""
         try:
-            if os.path.exists(KEY_FILE):
-                with open(KEY_FILE, 'rb') as f:
-                    return f.read()
-            return self._generate_key()
-        except Exception as e:
-            print(f"Error loading encryption key: {str(e)}")
-            return self._generate_key()
+            with open(KEY_FILE, 'rb') as key_file:
+                return key_file.read()
+        except FileNotFoundError:
+            key = Fernet.generate_key()
+            with open(KEY_FILE, 'wb') as key_file:
+                key_file.write(key)
+            return key
 
     def encrypt_data(self, data):
-        """Encrypt a string."""
-        try:
-            if isinstance(data, str):
-                data = data.encode()
-            return self.fernet.encrypt(data)
-        except Exception as e:
-            print(f"Error encrypting data: {str(e)}")
-            return None
+        """Encrypt data and return base64 encoded string."""
+        if isinstance(data, str):
+            data = data.encode()
+        encrypted_data = self.fernet.encrypt(data)
+        # Convert to base64 string for JSON serialization
+        return base64.b64encode(encrypted_data).decode('utf-8')
 
     def decrypt_data(self, encrypted_data):
-        """Decrypt an encrypted string."""
+        """Decrypt base64 encoded encrypted data."""
         try:
+            # Convert from base64 string back to bytes
             if isinstance(encrypted_data, str):
-                encrypted_data = encrypted_data.encode()
+                encrypted_data = base64.b64decode(encrypted_data.encode('utf-8'))
             decrypted_data = self.fernet.decrypt(encrypted_data)
-            return decrypted_data.decode()
+            return decrypted_data.decode('utf-8')
         except Exception as e:
             print(f"Error decrypting data: {str(e)}")
             return None

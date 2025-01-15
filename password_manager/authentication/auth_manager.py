@@ -1,13 +1,16 @@
-"""
-Authentication management for the password manager.
-"""
+"""Authentication manager module."""
 
 import os
+import socket
+import requests
 import pyotp
 import platform
 import subprocess
 from datetime import datetime
+from ..security.session import SessionManager
+from ..security.login_tracker import LoginTracker
 from ..config.settings import (
+    DATA_DIR,
     MASTER_PASSWORD_FILE,
     MFA_CONFIG_FILE,
     BACKUP_CODES_FILE,
@@ -18,6 +21,10 @@ from ..storage.file_handler import FileHandler
 
 class AuthenticationManager:
     def __init__(self):
+        """Initialize authentication manager."""
+        self.session_manager = SessionManager()
+        self.login_tracker = LoginTracker()
+        self.current_session = None
         self.file_handler = FileHandler()
         self.encryption_manager = EncryptionManager()
 
@@ -115,42 +122,6 @@ class AuthenticationManager:
         
         return password
 
-    def setup_mfa(self):
-        """Enable MFA for the password manager."""
-        print("\nEnable Multi-Factor Authentication")
-        print("-" * 20)
-        
-        # Generate a random secret key for TOTP
-        secret_key = pyotp.random_base32()
-        totp = pyotp.TOTP(secret_key)
-        
-        # Generate QR code for authenticator apps
-        provisioning_uri = totp.provisioning_uri("Password Manager", issuer_name="Secure Password Manager")
-        
-        print("\nPlease follow these steps to enable MFA:")
-        print("1. Open your authenticator app (Google Authenticator, Authy, etc.)")
-        print("2. Scan the QR code or manually enter the secret key")
-        print(f"\nSecret Key: {secret_key}")
-        
-        # Generate and save backup codes
-        backup_codes = self.generate_backup_codes()
-        
-        # Verify setup
-        print("\nTo verify setup, please enter the code from your authenticator app:")
-        for _ in range(3):  # Give user 3 attempts
-            verification_code = input("Enter verification code: ")
-            if totp.verify(verification_code):
-                self.save_mfa_config(secret_key, backup_codes)
-                print("\nMFA enabled successfully!")
-                print("\nBACKUP CODES (save these in a secure location):")
-                for code in backup_codes:
-                    print(code)
-                return True
-            print("Invalid code, please try again.")
-        
-        print("Failed to verify MFA setup. Please try again later.")
-        return False
-
     def verify_mfa(self):
         """Verify MFA code during login."""
         mfa_config = self.file_handler.load_json_file(MFA_CONFIG_FILE, {"enabled": False})
@@ -180,28 +151,6 @@ class AuthenticationManager:
         print("Too many failed attempts.")
         return False
 
-    @staticmethod
-    def generate_backup_codes(num_codes=8):
-        """Generate backup codes for MFA recovery."""
-        import random
-        import string
-        backup_codes = []
-        for _ in range(num_codes):
-            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-            backup_codes.append(code)
-        return backup_codes
-
-    def save_mfa_config(self, secret_key, backup_codes):
-        """Save MFA configuration and backup codes."""
-        mfa_config = {
-            "enabled": True,
-            "secret_key": secret_key,
-            "enabled_date": datetime.now().isoformat()
-        }
-        
-        self.file_handler.save_json_file(MFA_CONFIG_FILE, mfa_config)
-        self.file_handler.save_json_file(BACKUP_CODES_FILE, {"backup_codes": backup_codes})
-
     def verify_backup_code(self, entered_code):
         """Verify a backup code and remove it if valid."""
         backup_data = self.file_handler.load_json_file(BACKUP_CODES_FILE, {"backup_codes": []})
@@ -212,36 +161,6 @@ class AuthenticationManager:
             backup_codes.remove(entered_code)
             self.file_handler.save_json_file(BACKUP_CODES_FILE, {"backup_codes": backup_codes})
             return True
-        return False
-
-    @staticmethod
-    def is_biometric_available():
-        """Check if biometric authentication is available on the system."""
-        system = platform.system().lower()
-        
-        if system == "darwin":  # macOS
-            try:
-                result = subprocess.run(["bioutil", "-c"], capture_output=True, text=True)
-                return result.returncode == 0
-            except FileNotFoundError:
-                return False
-        elif system == "windows":
-            try:
-                import winreg
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                   r"SOFTWARE\Microsoft\Windows\CurrentVersion\WinBio",
-                                   0, winreg.KEY_READ)
-                winreg.CloseKey(key)
-                return True
-            except WindowsError:
-                return False
-        elif system == "linux":
-            try:
-                result = subprocess.run(["fprintd-list"], capture_output=True, text=True)
-                return result.returncode == 0
-            except FileNotFoundError:
-                return False
-        
         return False
 
     def authenticate_with_biometrics(self):
@@ -266,4 +185,76 @@ class AuthenticationManager:
             return False
         except Exception as e:
             print(f"Biometric authentication error: {e}")
-            return False 
+            return False
+
+    def _get_ip_address(self):
+        """Get the current IP address."""
+        try:
+            # Try to get external IP
+            response = requests.get('https://api.ipify.org')
+            return response.text
+        except Exception:
+            # Fallback to local IP
+            return socket.gethostbyname(socket.gethostname())
+
+    def login(self, username, password):
+        """Authenticate user and create session."""
+        ip_address = self._get_ip_address()
+
+        # Check if IP is blocked
+        if self.login_tracker.is_ip_blocked(ip_address):
+            return False, "Too many failed attempts. Please try again later."
+
+        # Verify credentials
+        if not self._verify_credentials(username, password):
+            self.login_tracker.record_attempt(ip_address, username, False)
+            return False, "Invalid username or password"
+
+        # Create new session
+        session_id = self.session_manager.create_session(username, ip_address)
+        self.current_session = session_id
+        self.login_tracker.record_attempt(ip_address, username, True)
+
+        return True, session_id
+
+    def logout(self):
+        """End the current session."""
+        if self.current_session:
+            self.session_manager.end_session(self.current_session)
+            self.current_session = None
+            return True
+        return False
+
+    def validate_session(self, session_id):
+        """Validate a session is active and not expired."""
+        return self.session_manager.validate_session(session_id)
+
+    def get_active_sessions(self, username=None):
+        """Get all active sessions for a user."""
+        return self.session_manager.get_active_sessions(username)
+
+    def end_all_sessions(self, username):
+        """End all sessions for a user."""
+        self.session_manager.end_all_sessions(username)
+
+    def get_login_history(self, username=None, ip_address=None):
+        """Get login attempt history."""
+        if username:
+            return self.login_tracker.get_attempts_for_user(username)
+        elif ip_address:
+            return self.login_tracker.get_attempts_for_ip(ip_address)
+        return []
+
+    def get_blocked_ips(self):
+        """Get list of currently blocked IPs."""
+        return self.login_tracker.get_blocked_ips()
+
+    def unblock_ip(self, ip_address):
+        """Manually unblock an IP address."""
+        self.login_tracker.unblock_ip(ip_address)
+
+    def _verify_credentials(self, username, password):
+        """Verify username and password."""
+        # TODO: Implement actual credential verification
+        # This is a placeholder - replace with your actual verification logic
+        return True  # For testing purposes 

@@ -48,30 +48,52 @@ EMAIL_CONFIG = {
     'sender_password': ''             # Your Gmail App Password
 }
 
-# Define audit action types
+# Audit log action types
 class AuditAction:
-    """Enum class for audit action types."""
-    ADD_PASSWORD = "add_password"
-    REMOVE_PASSWORD = "remove_password"
-    VIEW_PASSWORD = "view_password"
-    GENERATE_PASSWORD = "generate_password"
-    MODIFY_PASSWORD = "modify_password"
-    ADD_NOTE = "add_note"
-    VIEW_NOTE = "view_note"
-    REMOVE_NOTE = "remove_note"
-    MODIFY_NOTE = "modify_note"
-    BACKUP_CREATED = "backup_created"
-    BACKUP_RESTORED = "backup_restored"
-    MFA_ENABLED = "mfa_enabled"
-    MFA_DISABLED = "mfa_disabled"
-    SETTINGS_CHANGED = "settings_changed"
-    FAILED_LOGIN = "failed_login"
-    SUCCESSFUL_LOGIN = "successful_login"
-    EMERGENCY_ACCESS_REQUEST = "emergency_access_request"
-    EMERGENCY_ACCESS_GRANTED = "emergency_access_granted"
-    EMERGENCY_ACCESS_DENIED = "emergency_access_denied"
-    TRUSTED_CONTACT_ADDED = "trusted_contact_added"
-    TRUSTED_CONTACT_REMOVED = "trusted_contact_removed"
+    # Authentication actions
+    LOGIN_ATTEMPT = "Login Attempt"
+    LOGOUT = "Logout"
+    MFA_SETUP = "MFA Setup"
+    MFA_DISABLE = "MFA Disable"
+    BIOMETRIC_SETUP = "Biometric Setup"
+    BIOMETRIC_DISABLE = "Biometric Disable"
+    
+    # Password actions
+    ADD_PASSWORD = "Add Password"
+    VIEW_PASSWORD = "View Password"
+    UPDATE_PASSWORD = "Update Password"
+    REMOVE_PASSWORD = "Remove Password"
+    GENERATE_PASSWORD = "Generate Password"
+    IMPORT_PASSWORDS = "Import Passwords"
+    EXPORT_PASSWORDS = "Export Passwords"
+    
+    # Note actions
+    ADD_NOTE = "Add Note"
+    VIEW_NOTE = "View Note"
+    UPDATE_NOTE = "Update Note"
+    DELETE_NOTE = "Delete Note"
+    
+    # Backup actions
+    CREATE_BACKUP = "Create Backup"
+    RESTORE_BACKUP = "Restore Backup"
+    
+    # Emergency access actions
+    EMERGENCY_ACCESS_REQUEST = "Emergency Access Request"
+    EMERGENCY_ACCESS_GRANTED = "Emergency Access Granted"
+    EMERGENCY_ACCESS_DENIED = "Emergency Access Denied"
+    
+    # Contact management
+    ADD_TRUSTED_CONTACT = "Add Trusted Contact"
+    REMOVE_TRUSTED_CONTACT = "Remove Trusted Contact"
+    
+    # Settings actions
+    UPDATE_SETTINGS = "Update Settings"
+    RESET_SETTINGS = "Reset Settings"
+    
+    # Security actions
+    PASSWORD_HEALTH_CHECK = "Password Health Check"
+    BREACH_CHECK = "Breach Check"
+    TOGGLE_FAVORITE = "Toggle Favorite"
 
 # Password strength categories
 class PasswordStrength:
